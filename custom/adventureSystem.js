@@ -1,0 +1,627 @@
+/*
+ * Copyright (C) 2016-2019 phantombot.tv
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+(function() {
+    var joinTime = $.getSetIniDbNumber('adventureSettings', 'joinTime', 60),
+        coolDown = $.getSetIniDbNumber('adventureSettings', 'coolDown', 900),
+        gainPercent = $.getSetIniDbNumber('adventureSettings', 'gainPercent', 30),
+        minBet = $.getSetIniDbNumber('adventureSettings', 'minBet', 10),
+        maxBet = $.getSetIniDbNumber('adventureSettings', 'maxBet', 1000),
+        enterMessage = $.getSetIniDbBoolean('adventureSettings', 'enterMessage', false),
+        warningMessage = $.getSetIniDbBoolean('adventureSettings', 'warningMessage', false),
+        coolDownAnnounce = $.getSetIniDbBoolean('adventureSettings', 'coolDownAnnounce', false),
+        currentAdventure = {},
+        stories = [],
+        moduleLoaded = false,
+        lastStory;
+
+
+    function reloadAdventure() {
+        joinTime = $.getIniDbNumber('adventureSettings', 'joinTime');
+        coolDown = $.getIniDbNumber('adventureSettings', 'coolDown');
+        gainPercent = $.getIniDbNumber('adventureSettings', 'gainPercent');
+        minBet = $.getIniDbNumber('adventureSettings', 'minBet');
+        maxBet = $.getIniDbNumber('adventureSettings', 'maxBet');
+        enterMessage = $.getIniDbBoolean('adventureSettings', 'enterMessage');
+        warningMessage = $.getIniDbBoolean('adventureSettings', 'warningMessage');
+        coolDownAnnounce = $.getIniDbBoolean('adventureSettings', 'coolDownAnnounce');
+    };
+
+    /**
+     * Loads stories from the prefixes 'adventuresystem.stories.default' (only if the language
+     * property of 'adventuresystem.stories.default.enabled' is set to 'true') and
+     * 'adventuresystem.stories'.
+     * 
+     * Clears any previously loaded stories.
+     * 
+     * @function loadStories
+     */
+    function loadStories() {
+        currentAdventure.users = [];
+        currentAdventure.survivors = [];
+        currentAdventure.unrevealedSurvivors = [];
+        currentAdventure.caught = [];
+        currentAdventure.unrevealedCaught = [];
+        currentAdventure.gameState = 0;
+        currentAdventure.gainPercent = gainPercent;
+
+        stories = [];
+
+        // For backwards compatibility, load default stories if the variable is not set
+        if (!$.lang.exists('adventuresystem.stories.default') || $.lang.get('adventuresystem.stories.default') === 'true') {
+            loadStoriesFromPrefix('adventuresystem.stories');
+        }
+
+        loadStoriesFromPrefix('adventuresystem.stories.custom');
+
+        $.consoleDebug($.lang.get('adventuresystem.loaded', stories.length));
+
+        for (var i in stories) {
+            if (stories[i].game === null) {
+                return;
+            }
+        }
+
+        $.log.warn('You must have at least one adventure that doesn\'t require a game to be set.');
+        currentAdventure.gameState = 2;
+    };
+
+    /**
+     * Loads stories from a specific prefix in the language table and adds them to the
+     * global stories array.
+     * 
+     * @param {string} prefix - The prefix underneath which the stories can be found
+     * @example
+     * // Import stories with adventuresystem.stories.custom.X.title as title and
+     * // adventuresystem.stories.custom.X.chapter.Y as chapters
+     * loadStoriesFromPrefix('adventuresystem.stories.custom');
+     */
+    function loadStoriesFromPrefix(prefix) {
+        var storyId = 1,
+            chapterId,
+            lines,
+            gain;
+
+         for (storyId; $.lang.exists(prefix + '.' + storyId + '.title'); storyId++) {
+            lines = [];
+            for (chapterId = 1; $.lang.exists(prefix + '.' + storyId + '.chapter.' + chapterId); chapterId++) {
+                lines.push($.lang.get(prefix + '.' + storyId + '.chapter.' + chapterId));
+            }
+            
+            gain = $.lang.exists(prefix + '.' + storyId + '.gain') ? parseInt($.lang.get(prefix + '.' + storyId + '.gain')) : null;
+
+            stories.push({
+                game: ($.lang.exists(prefix + '.' + storyId + '.game') ? $.lang.get(prefix + '.' + storyId + '.game') : null),
+                title: $.lang.get(prefix + '.' + storyId + '.title'),
+                lines: lines,
+                gainPercent: gain,
+            });
+        }
+
+        $.consoleDebug($.lang.get('adventuresystem.loaded.prefix', storyId - 1, prefix));
+    };
+
+    /**
+     * @function top5
+     */
+    function top5() {
+        var payoutsKeys = $.inidb.GetKeyList('adventurePayouts', ''),
+            temp = [],
+            counter = 1,
+            top5 = [],
+            i;
+
+        if (payoutsKeys.length == 0) {
+            $.say($.lang.get('adventuresystem.top5.empty'));
+        }
+
+        for (i in payoutsKeys) {
+            if (payoutsKeys[i].equalsIgnoreCase($.ownerName) || payoutsKeys[i].equalsIgnoreCase($.botName)) {
+                continue;
+            }
+            temp.push({
+                username: payoutsKeys[i],
+                amount: parseInt($.inidb.get('adventurePayouts', payoutsKeys[i])),
+            });
+        }
+
+        temp.sort(function(a, b) {
+            return (a.amount < b.amount ? 1 : -1);
+        });
+
+        for (i in temp) {
+            if (counter <= 5) {
+                top5.push(counter + '. ' + temp[i].username + ': ' + $.getPointsString(temp[i].amount));
+                counter++;
+            }
+        }
+        $.say($.lang.get('adventuresystem.top5', top5.join(', ')));
+    };
+
+    /**
+     * @function checkUserAlreadyJoined
+     * @param {string} username
+     * @returns {boolean}
+     */
+    function checkUserAlreadyJoined(username) {
+        var i;
+        for (i in currentAdventure.users) {
+            if (currentAdventure.users[i].username == username) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    /**
+     * @function adventureUsersListJoin
+     * @param {Array} list
+     * @returns {string}
+     */
+    function adventureUsersListJoin(list) {
+        var temp = [],
+            i;
+        for (i in list) {
+            temp.push($.username.resolve(list[i].username));
+        }
+        if (temp.length == 2) {
+            return temp[0] + ' and ' + temp[1];
+        }
+        if (temp.length > 1) {
+            temp[temp.length - 1] = 'and ' + temp[temp.length - 1];
+        }
+        return temp.join(', ');
+    };
+
+    /**
+     * @function calculateResult
+     */
+    function calculateResult() {
+        var i;
+        for (i in currentAdventure.users) {
+            if ($.randRange(0, 20) > 5) {
+                currentAdventure.survivors.push(currentAdventure.users[i]);
+                currentAdventure.unrevealedSurvivors.push(currentAdventure.users[i]);
+            } else {
+                currentAdventure.caught.push(currentAdventure.users[i]);
+                currentAdventure.unrevealedCaught.push(currentAdventure.users[i]);
+            }
+        }
+    };
+
+    /**
+     * @function revealNext
+     * @param {Array} array
+     * @returns {string}
+     */
+    function revealNext(array) {
+        var i = $.randRange(0, array.length - 1);
+        var selected = array.splice(i, 1)[0];
+        return $.username.resolve(selected.username);
+    }
+
+    var reProb = /\(prob=(\d+)\)/,
+        reGainPlus = /\(gain\+=(\d+)\)/;
+
+    /**
+     * @function replaceTags
+     * @param {string} line
+     * @returns {string}
+     */
+    function replaceTags(line) {
+        if (reProb.test(line)) {
+            var prob = parseInt(RegExp.$1);
+            if ($.rand(100) >= prob) {
+                return '';
+            } else {
+                line = line.replace(reProb, '');
+            }
+        }
+        if (line.indexOf('(caught)') > -1) {
+            if (currentAdventure.caught.length > 0) {
+                return line.replace('(caught)', adventureUsersListJoin(currentAdventure.caught));
+            } else {
+                return '';
+            }
+        }
+        if (line.indexOf('(survivors)') > -1) {
+            if (currentAdventure.survivors.length > 0) {
+                return line.replace('(survivors)', adventureUsersListJoin(currentAdventure.survivors));
+            } else {
+                return '';
+            }
+        }
+        if (line.indexOf('(next caught)') > -1) {
+            if (currentAdventure.unrevealedCaught.length > 0) {
+                line = $.replace(line, '(next caught)', revealNext(currentAdventure.unrevealedCaught));
+            } else {
+                return '';
+            }
+        }
+        if (line.indexOf('(next survivor)') > -1) {
+            if (currentAdventure.unrevealedSurvivors.length > 0) {
+                line = $.replace(line, '(next survivor)', revealNext(currentAdventure.unrevealedSurvivors));
+            } else {
+                return '';
+            }
+        }
+        if (line.indexOf('(other caught)') > -1) {
+            if (currentAdventure.unrevealedCaught.length > 0) {
+                line = line.replace('(other caught)', adventureUsersListJoin(currentAdventure.unrevealedCaught));
+                currentAdventure.unrevealedCaught = [];
+            } else {
+                return '';
+            }
+        }
+        if (line.indexOf('(other survivors)') > -1) {
+            if (currentAdventure.unrevealedSurvivors.length > 0) {
+                line = line.replace('(other survivors)', adventureUsersListJoin(currentAdventure.unrevealedSurvivors));
+                currentAdventure.unrevealedSurvivors = [];
+            } else {
+                return '';
+            }
+        }
+        if (reGainPlus.test(line)) {
+            currentAdventure.gainPercent += parseInt(RegExp.$1);
+            line = line.replace(reGainPlus, '');
+        }
+        return line;
+    };
+
+    /**
+     * @function startHeist
+     * @param {string} username
+     */
+    function startHeist(username) {
+        currentAdventure.gameState = 1;
+
+        var t = setTimeout(function() {
+            runStory();
+        }, joinTime * 1e3);
+
+        $.say($.lang.get('adventuresystem.start.success', $.resolveRank(username), $.pointNameMultiple));
+    };
+
+    /**
+     * @function joinHeist
+     * @param {string} username
+     * @param {Number} bet
+     * @returns {boolean}
+     */
+    function joinHeist(username, bet) {
+        if (stories.length < 1) {
+            $.log.error('No adventures found; cannot start an adventure.');
+            return;
+        }
+
+        if (currentAdventure.gameState > 1) {
+            if (!warningMessage) return;
+            $.say($.whisperPrefix(username) + $.lang.get('adventuresystem.join.notpossible'));
+            return;
+        }
+
+        if (checkUserAlreadyJoined(username)) {
+            if (!warningMessage) return;
+            $.say($.whisperPrefix(username) + $.lang.get('adventuresystem.alreadyjoined'));
+            return;
+        }
+
+        if (bet > $.getUserPoints(username)) {
+            if (!warningMessage) return;
+            $.say($.whisperPrefix(username) + $.lang.get('adventuresystem.join.needpoints', $.getPointsString(bet), $.getPointsString($.getUserPoints(username))));
+            return;
+        }
+
+        if (bet < minBet) {
+            if (!warningMessage) return;
+            $.say($.whisperPrefix(username) + $.lang.get('adventuresystem.join.bettoolow', $.getPointsString(bet), $.getPointsString(minBet)));
+            return;
+        }
+
+        if (bet > maxBet) {
+            if (!warningMessage) return;
+            $.say($.whisperPrefix(username) + $.lang.get('adventuresystem.join.bettoohigh', $.getPointsString(bet), $.getPointsString(maxBet)));
+            return;
+        }
+
+        if (currentAdventure.gameState == 0) {
+            startHeist(username);
+        } else {
+            if (enterMessage) {
+                $.say($.whisperPrefix(username) + $.lang.get('adventuresystem.join.success', $.getPointsString(bet)));
+            }
+        }
+
+        currentAdventure.users.push({
+            username: username,
+            bet: parseInt(bet),
+        });
+
+        $.inidb.decr('points', username, bet);
+        return true;
+    };
+
+    /**
+     * @function runStory
+     */
+    function runStory() {
+        var progress = 0,
+            temp = [],
+            story,
+            line,
+            t;
+
+        currentAdventure.gameState = 2;
+        calculateResult();
+
+        var game = $.getGame($.channelName);
+
+        for (var i in stories) {
+            if (stories[i].game != null) {
+                if (game.equalsIgnoreCase(stories[i].game)) {
+                    //$.consoleLn('gamespec::' + stories[i].title);
+                    temp.push({
+                        index: i,
+                        title: stories[i].title,
+                        lines: stories[i].lines,
+                        gainPercent: stories[i].gainPercent
+                    });
+                }
+            } else {
+                //$.consoleLn('normal::' + stories[i].title);
+                temp.push({
+                    index: i,
+                    title: stories[i].title,
+                    lines: stories[i].lines,
+                    gainPercent: stories[i].gainPercent
+                });
+            }
+        }
+
+        do {
+            story = $.randElement(temp);
+        } while (story.index === lastStory && stories.length != 1);
+
+        lastStory = story.index;
+
+        if (typeof story.gainPercent === 'number') {
+            currentAdventure.gainPercent = story.gainPercent;
+        }
+
+        $.say($.lang.get('adventuresystem.runstory', story.title, currentAdventure.users.length));
+
+        t = setInterval(function() {
+            var repeat;
+            do {
+                repeat = false;
+                if (progress < story.lines.length) {
+                    line = replaceTags(story.lines[progress]);
+                    if (line != '') {
+                        $.say(line.replace(/\(game\)/g, $.twitchcache.getGameTitle() + ''));
+                    } else {
+                        repeat = true;
+                    }
+                } else {
+                    endHeist();
+                    clearInterval(t);
+                }
+                progress++;
+            } while (repeat);
+        }, 7e3);
+    };
+
+    /**
+     * @function endHeist
+     */
+    function endHeist() {
+        var i, pay, username, maxlength = 0;
+        var temp = [];
+
+        for (i in currentAdventure.survivors) {
+            pay = (currentAdventure.survivors[i].bet * (currentAdventure.gainPercent / 100));
+            $.inidb.incr('adventurePayouts', currentAdventure.survivors[i].username, pay);
+            $.inidb.incr('adventurePayoutsTEMP', currentAdventure.survivors[i].username, pay);
+            $.inidb.incr('points', currentAdventure.survivors[i].username, currentAdventure.survivors[i].bet + pay);
+        }
+
+        for (i in currentAdventure.survivors) {
+            username = currentAdventure.survivors[i].username;
+            maxlength += username.length();
+            temp.push($.username.resolve(username) + ' (+' + $.getPointsString($.inidb.get('adventurePayoutsTEMP', currentAdventure.survivors[i].username)) + ')');
+        }
+
+        if (temp.length == 0) {
+            $.say($.lang.get('adventuresystem.completed.no.win'));
+        } else if (((maxlength + 14) + $.channelName.length) > 512) {
+            $.say($.lang.get('adventuresystem.completed.win.total', currentAdventure.survivors.length, currentAdventure.caught.length)); //in case too many people enter.
+        } else {
+            $.say($.lang.get('adventuresystem.completed', temp.join(', ')));
+        }
+
+        clearCurrentAdventure();
+        temp = "";
+        $.coolDown.set('adventure', false, coolDown, false);
+        if (coolDownAnnounce) {
+            setTimeout(function() {
+                $.say($.lang.get('adventuresystem.reset', $.pointNameMultiple));
+            }, coolDown*1000);
+        }
+    };
+
+    /**
+     * @function clearCurrentAdventure
+     */
+    function clearCurrentAdventure() {
+        currentAdventure = {
+            gameState: 0,
+            users: [],
+            survivors: [],
+            caught: [],
+            unrevealedSurvivors: [],
+            unrevealedCaught: [],
+            gainPercent: gainPercent,
+        }
+        $.inidb.RemoveFile('adventurePayoutsTEMP');
+    };
+
+    /**
+     * @event command
+     */
+    $.bind('command', function(event) {
+        var sender = event.getSender().toLowerCase(),
+            command = event.getCommand(),
+            args = event.getArgs(),
+            action = args[0],
+            actionArg1 = args[1],
+            actionArg2 = args[2];
+
+        /**
+         * @commandpath adventure - Adventure command for starting, checking or setting options
+         * @commandpath adventure [amount] - Start/join an adventure
+         */
+        if (command.equalsIgnoreCase('adventure')) {
+            if (!action) {
+                $.say($.whisperPrefix(sender) + $.lang.get('adventuresystem.adventure.usage', $.pointNameMultiple));
+                return;
+            }
+
+            if (!isNaN(parseInt(action))) {
+                joinHeist(sender, parseInt(action));
+                return;
+            }
+
+            /**
+             * @commandpath adventure top5 - Announce the top 5 adventurers in the chat (most points gained)
+             */
+            if (action.equalsIgnoreCase('top5')) {
+                top5();
+            }
+
+            /**
+             * @commandpath adventure set - Base command for controlling the adventure settings
+             */
+            if (action.equalsIgnoreCase('set')) {
+                if (actionArg1 === undefined || actionArg2 === undefined) {
+                    $.say($.whisperPrefix(sender) + $.lang.get('adventuresystem.set.usage'));
+                    return;
+                }
+
+                /**
+                 * @commandpath adventure set jointime [seconds] - Set the join time
+                 */
+                if (actionArg1.equalsIgnoreCase('joinTime')) {
+                    if (isNaN(parseInt(actionArg2))) {
+                        $.say($.whisperPrefix(sender) + $.lang.get('adventuresystem.set.usage'));
+                        return;
+                    }
+                    joinTime = parseInt(actionArg2);
+                    $.inidb.set('adventureSettings', 'joinTime', parseInt(actionArg2));
+                }
+
+                /**
+                 * @commandpath adventure set cooldown [seconds] - Set cooldown time
+                 */
+                if (actionArg1.equalsIgnoreCase('coolDown')) {
+                    if (isNaN(parseInt(actionArg2))) {
+                        $.say($.whisperPrefix(sender) + $.lang.get('adventuresystem.set.usage'));
+                        return;
+                    }
+                    coolDown = parseInt(actionArg2);
+                    $.inidb.set('adventureSettings', 'coolDown', parseInt(actionArg2));
+                }
+
+                /**
+                 * @commandpath adventure set gainpercent [value] - Set the gain percent value
+                 */
+                if (actionArg1.equalsIgnoreCase('gainPercent')) {
+                    if (isNaN(parseInt(actionArg2))) {
+                        $.say($.whisperPrefix(sender) + $.lang.get('adventuresystem.set.usage'));
+                        return;
+                    }
+                    gainPercent = parseInt(actionArg2);
+                    $.inidb.set('adventureSettings', 'gainPercent', parseInt(actionArg2));
+                }
+
+                /**
+                 * @commandpath adventure set minbet [value] - Set the minimum bet
+                 */
+                if (actionArg1.equalsIgnoreCase('minBet')) {
+                    if (isNaN(parseInt(actionArg2))) {
+                        $.say($.whisperPrefix(sender) + $.lang.get('adventuresystem.set.usage'));
+                        return;
+                    }
+                    minBet = parseInt(actionArg2);
+                    $.inidb.set('adventureSettings', 'minBet', parseInt(actionArg2));
+                }
+
+                /**
+                 * @commandpath adventure set maxbet [value] - Set the maximum bet
+                 */
+                if (actionArg1.equalsIgnoreCase('maxBet')) {
+                    if (isNaN(parseInt(actionArg2))) {
+                        $.say($.whisperPrefix(sender) + $.lang.get('adventuresystem.set.usage'));
+                        return;
+                    }
+                    maxBet = parseInt(actionArg2);
+                    $.inidb.set('adventureSettings', 'maxBet', parseInt(actionArg2));
+                }
+
+                /**
+                 * @commandpath adventure set warningmessages [true / false] - Sets the per-user warning messages
+                 */
+                if (actionArg1.equalsIgnoreCase('warningmessages')) {
+                    if (args[2].equalsIgnoreCase('true')) warningMessage = true, actionArg2 = $.lang.get('common.enabled');
+                    if (args[2].equalsIgnoreCase('false')) warningMessage = false, actionArg2 = $.lang.get('common.disabled');
+                    $.inidb.set('adventureSettings', 'warningMessage', warningMessage);
+                }
+
+                /**
+                 * @commandpath adventure set entrymessages [true / false] - Sets the per-user entry messages
+                 */
+                if (actionArg1.equalsIgnoreCase('entrymessages')) {
+                    if (args[2].equalsIgnoreCase('true')) enterMessage = true, actionArg2 = $.lang.get('common.enabled');
+                    if (args[2].equalsIgnoreCase('false')) enterMessage = false, actionArg2 = $.lang.get('common.disabled');
+                    $.inidb.set('adventureSettings', 'enterMessage', enterMessage);
+                }
+
+                /**
+                 * @commandpath adventure set cooldownannounce [true / false] - Sets the cooldown announcement
+                 */
+                if (actionArg1.equalsIgnoreCase('cooldownannounce')) {
+                    if (args[2].equalsIgnoreCase('true')) coolDownAnnounce = true, actionArg2 = $.lang.get('common.enabled');
+                    if (args[2].equalsIgnoreCase('false')) coolDownAnnounce = false, actionArg2 = $.lang.get('common.disabled');
+                    $.inidb.set('adventureSettings', 'coolDownAnnounce', coolDownAnnounce);
+                }
+
+                $.say($.whisperPrefix(sender) + $.lang.get('adventuresystem.set.success', actionArg1, actionArg2));
+            }
+        }
+    });
+
+    /**
+     * @event initReady
+     */
+    $.bind('initReady', function() {
+        $.registerChatCommand('./custom/adventureSystem.js', 'adventure', 7);
+        $.registerChatSubcommand('adventure', 'set', 1);
+        $.registerChatSubcommand('adventure', 'top5', 3);
+
+        loadStories();
+    });
+
+    $.reloadAdventure = reloadAdventure;
+})();
