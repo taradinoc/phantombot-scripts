@@ -1,0 +1,116 @@
+#slider {
+  width: 400px;
+  position: fixed;
+  bottom: 0;
+  right: 0;
+}
+
+.slick-slide {
+  font-family: 'Arial', 'Helvetica', sans-serif;
+  font-size: 18pt;
+  color: white;
+  transition: color 1.5s, background-color 1s;
+  text-shadow: -1px 0 2px black, 0 1px 2px black, 1px 0 2px black, 0 -1px 2px black;
+  line-height: 150%;
+  text-align: right;
+  animation-fill-mode: both;
+}
+
+.slick-slide * {
+  vertical-align: middle;
+}
+
+.slick-slide.updated {
+  background-color: rgba(0, 128, 0, 0.5);
+}
+
+/*.slick-slide.updated:not(.counter-value) {
+  color: yellow;
+}*/
+
+/* .updated.value-changed .counter-value, .updated.title-changed .counter-title { */
+.updated .updated-hot {
+  animation:
+    pipin-hot 300ms linear /* cubic-bezier(0.32, 0, 0.67, 0) */ 0s 10 alternate,
+    biggie 3s;
+}
+
+.updated :not(.updated-hot) /* :not(.title-changed .counter-title) */ {
+  animation:
+    shiny 1500ms ease /* cubic-bezier(0.32, 0, 0.67, 0) */ 0s 2 alternate,
+    lil-biggie 3s;
+}
+
+/* .updated * {
+  background-color: red ;
+}
+
+.updated :not(.value-changed .counter-value) {
+  background-color: blue !important;
+}
+ */
+@keyframes pipin-hot {
+  from {
+    /* color: yellow; */
+    /* text-shadow: -1px 0 2px black, 0 1px 2px black, 1px 0 2px black, 0 -1px 2px black; */
+  }
+  /* 50% {
+    color: orange;
+    text-shadow: -1px 0 2px black, 0 1px 2px black, 1px 0 2px black, 0 -1px 2px black,
+      -1px 0 5px white, 0 1px 5px yellow, 1px 0 5px white, 0 -1px 5px yellow;
+  } */
+  to {
+    color: #d80;
+    /* text-shadow: -1px 0 2px black, 0 1px 2px black, 1px 0 2px black, 0 -1px 2px black,
+      -1px 0 5px yellow, 0 1px 5px red, 1px 0 5px yellow, 0 -1px 5px orange; */
+  }
+  
+/*   100% {
+    color: white;
+    text-shadow: -1px 0 2px black, 0 1px 2px black, 1px 0 2px black, 0 -1px 2px black;
+  }
+   */
+}
+
+@keyframes biggie {
+  0% {
+    font-size: 100%;
+  }
+  10% {
+    font-size: 165%;
+  }
+  90% {
+    font-size: 165%;
+  }
+  100% {
+    font-size: 100%;
+  }
+}
+
+@keyframes lil-biggie {
+  0% {
+    font-size: 100%;
+  }
+  10% {
+    font-size: 125%;
+  }
+  90% {
+    font-size: 125%;
+  }
+  100% {
+    font-size: 100%;
+  }
+}
+
+@keyframes shiny {
+  from {
+    /* color: white; */
+    text-shadow: -1px 0 2px black, 0 1px 2px black, 1px 0 2px black, 0 -1px 2px black;
+  }
+  to {
+    /* color: yellow; */
+    text-shadow:
+      -1px 0 2px black, 0 1px 2px black, 1px 0 2px black, 0 -1px 2px black,
+      0 0 4px '#ffffcc';
+  }
+}
