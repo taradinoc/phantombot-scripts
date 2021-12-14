@@ -230,7 +230,7 @@ $(function() {
             let rawMessage = e.data,
                 message = JSON.parse(rawMessage);
 
-            console.log('WS received', rawMessage);
+            // console.log('WS received', rawMessage);
 
             if (!message.hasOwnProperty('query_id')) {
                 // Check for our auth result.
@@ -241,7 +241,7 @@ $(function() {
                         // request all counters
                         sendToSocket({
                             dbkeyslist: 'multicounter_init',
-                            query: [{ table: 'multiCounterValues' }, { table: 'multiCounterTitles' }]
+                            query: [{ table: 'multiCounterValues' }, { table: 'multiCounterTitles' }, { table: 'multiCounterOptions' }]
                         });
                     } else {
                         logError('Failed to authenticate with the socket.');
@@ -276,11 +276,17 @@ $(function() {
                             result.value = row.value;
                         } else if (row.table === 'multiCounterTitles') {
                             result.title = row.value;
+                        } else if (row.table === 'multiCounterOptions') {
+                            result.options = JSON.parse(row.value);
                         }
                     }
                     console.log('got counters', counters);
                     let slider = $('#slider');
                     for (let key in counters) {
+                        if (counters[key].options && counters[key].options.hidden) {
+                            delete counters[key];
+                            continue;
+                        }
                         let slide = makeSlide(key, counters[key].title, counters[key].value);
                         slider.slick('slickAdd', slide);
                     }
