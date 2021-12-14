@@ -308,3 +308,50 @@ $.lang.register('adventuresystem.stories.custom.28.chapter.1', 'The squad is get
 $.lang.register('adventuresystem.stories.custom.28.chapter.2', 'Rumour has it that bacon shall never expire, and shall be delicious if stored correctly.');
 $.lang.register('adventuresystem.stories.custom.28.chapter.3', 'The starving (caught) ate bacon found in the kitchen and got sick!');
 $.lang.register('adventuresystem.stories.custom.28.chapter.4', '(survivors) found delicious bathroom bacon. They\'re now feeling full and ready to hit the road!');
+
+// The legendary Trick
+// Author: Cygninikii
+
+$.lang.register('adventuresystem.stories.custom.29.title', 'The Legendary Trick');
+$.lang.register('adventuresystem.stories.custom.29.chapter.1', '"Welcome traveller, have you heard about this super secret trick of legends?"');
+$.lang.register('adventuresystem.stories.custom.29.chapter.2', '"The Strange man confuses the travellers, they ask more."');
+$.lang.register('adventuresystem.stories.custom.29.chapter.3', 'The Strange man tells them the area where they can find the scroll to teach them the trick, but it may cost them their lives!');
+$.lang.register('adventuresystem.stories.custom.29.chapter.4', 'The Adventurers arrive at a funny looking building, they go inside the odd building, Run! (caught) were fools and went to the wrong building which was a slaughterhouse! Oh No!');
+$.lang.register('adventuresystem.stories.custom.29.chapter.5', '(survivors) Made it to the right building safely and fought off the stone golems who had spent centuries mastering the trick, after a long fought battle they were victorious and claimed their scroll and became the ultimate Kunai Wafer Trickster.');
+
+// The Swamp Adventure
+// Author: Toadless
+
+$.lang.register('adventuresystem.stories.custom.30.title', 'The Swamp Adventure');
+$.lang.register('adventuresystem.stories.custom.30.chapter.1', '"Welcome, been into the mysterious swamp?"');
+$.lang.register('adventuresystem.stories.custom.30.chapter.2', '"The Strange man tells them to go into it."');
+$.lang.register('adventuresystem.stories.custom.30.chapter.3', 'The Strange man says: if you kill the toad that lies in the swamp I\'ll give you gold!');
+$.lang.register('adventuresystem.stories.custom.30.chapter.4', 'They arrive and see the toad. "Run!" (caught) foolishly and got eaten by the toad. Oh No!');
+$.lang.register('adventuresystem.stories.custom.30.chapter.5', '(survivors) waited for the toad to fall asleep and slayed it for their gold.');
+
+// The Poor Unfortunate
+// Author: Cygninikii
+
+$.lang.register('adventuresystem.stories.custom.31.title', 'The Poor Unfortunate');
+$.lang.register('adventuresystem.stories.custom.31.chapter.1', 'It\'s the month of November, TaradinoC is streaming again today.');
+$.lang.register('adventuresystem.stories.custom.31.chapter.2', 'Someone joins chat, they ask for a PL 144 gun for a Christmas present for their brother.');
+$.lang.register('adventuresystem.stories.custom.31.chapter.3', '(caught) were found lying about this and did not get their PL 144 gun."');
+$.lang.register('adventuresystem.stories.custom.31.chapter.4', '(survivors) were telling the truth and got their brother a PL 144 for Christmas and they were very happy!');
+
+// Sandwich
+// Author: Cygninikii
+
+$.lang.register('adventuresystem.stories.custom.32.title', 'Sandwich');
+$.lang.register('adventuresystem.stories.custom.32.chapter.1', '"Sandwich."');
+$.lang.register('adventuresystem.stories.custom.32.chapter.2', '"Sandwich?"');
+$.lang.register('adventuresystem.stories.custom.32.chapter.3', '(caught) got no sandwich');
+$.lang.register('adventuresystem.stories.custom.32.chapter.4', '(survivors) got sandwich.');
+
+// Squid Games
+// Author: TheCodaCrew
+
+$.lang.register('adventuresystem.stories.custom.33.title', 'Squid Games');
+$.lang.register('adventuresystem.stories.custom.33.chapter 1', '"Welcome to Squid Games. Survive them or perish!"');
+$.lang.register('adventuresystem.stories.custom.33.chapter 2', 'The games play out as the numbers dwindle down.');
+$.lang.register('adventuresystem.stories.custom.33.chapter 3', 'Unfortunately, (caught) perished during the games."');
+$.lang.register('adventuresystem.stories.custom.33.chapter 4', '(survivors) made it through the games and were rewarded with T-bucks.');

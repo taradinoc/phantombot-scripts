@@ -19,6 +19,7 @@
     var cost = 0,
         entries = [],
         winners = [],
+        winnersCalledAt = {},
         absentees = [],
         subTMulti = 1,
         regTMulti = 1,
@@ -95,6 +96,7 @@
         raffleStatus = true;
         $.inidb.RemoveFile('ticketsList');
         $.inidb.RemoveFile('ticketCostList');
+        $.inidb.RemoveFile('ticketBonusType');
         $.inidb.RemoveFile('ticketWinnersList');
         $.inidb.RemoveFile('ticketAbsenteeList');
         $.inidb.RemoveFile('entered');
@@ -103,6 +105,7 @@
         // entries = "";
         entries = [];
         winners = [];
+        winnersCalledAt = {};
         absentees = [];
 
         startMessageInterval();
@@ -157,7 +160,7 @@
         }
 
         var Winner = $.randElement(entries),
-            isFollowing = $.user.isFollower(Winner.toLowerCase()),
+            isFollowing = ($.isBot(Winner.toLowerCase()) || $.isOwner(Winner.toLowerCase()) || $.user.isFollower(Winner.toLowerCase())),
             followMsg = (isFollowing ? $.lang.get('rafflesystem.isfollowing') : $.lang.get('rafflesystem.isnotfollowing')),
             epicname = ($.bot.isModuleEnabled('./custom/epicLink.js') ? $.epicLink.getEpicName(Winner) : null),
             epicMsg = (epicname ? $.lang.get('ticketrafflesystem.winner.epic', epicname) : $.lang.get('ticketrafflesystem.winner.noepic'));
@@ -172,6 +175,7 @@
             }
         }
         winners.push(Winner);
+        winnersCalledAt[Winner] = Date.now();
         $.inidb.set('ticketWinnersList', Winner, $.inidb.get('ticketsList', Winner));
         $.inidb.del('ticketsList', Winner);
         $.inidb.decr('raffleresults', 'ticketRaffleEntries', 1);
@@ -210,6 +214,7 @@
         }
         for (var i = winners.length - 1; i >= 0; i--) {
             if (winners[i].equalsIgnoreCase(username)) {
+                delete winnersCalledAt[winners[i]];
                 winners.splice(i, 1);
             }
         }
@@ -233,50 +238,98 @@
         // don't restore ticket entries
 
         absentees.push(username);
+        var now = Date.now(), calledAt = now;
 
         for (var i = winners.length - 1; i >= 0; i--) {
             if (winners[i].equalsIgnoreCase(username)) {
+                if (winnersCalledAt[winners[i]]) {
+                    calledAt = winnersCalledAt[winners[i]];
+                    delete winnersCalledAt[winners[i]];
+                }
                 winners.splice(i, 1);
             }
         }
-        $.inidb.set('ticketAbsenteeList', username, winningTickets);
+        var waitedSeconds = Math.round((now - calledAt) / 1000);
+        $.inidb.set('ticketAbsenteeList',
+            username,
+            JSON.stringify({ winningTickets: winningTickets, waitedSeconds: waitedSeconds, type: 'absent' }));
+        $.inidb.del('ticketWinnersList', username);
+        $.inidb.decr('traffleSessionWinners', username, 1);
+    }
+
+    function pass(username) {
+        username = username.toLowerCase();
+        var winningTickets = $.getIniDbNumber('ticketWinnersList', username, -1);
+        if (winningTickets === -1) {
+            $.say($.lang.get('ticketrafflesystem.pass.err', $.username.resolve(username)));
+            return;
+        }
+
+        $.say($.lang.get('ticketrafflesystem.pass', $.username.resolve(username), winningTickets));
+        $.log.event('Marking ' + username + ' passed with ' + winningTickets + ' tickets');
+
+        // don't restore ticket entries
+
+        absentees.push(username);
+        var now = Date.now(), calledAt = now;
+
+        for (var i = winners.length - 1; i >= 0; i--) {
+            if (winners[i].equalsIgnoreCase(username)) {
+                if (winnersCalledAt[winners[i]]) {
+                    calledAt = winnersCalledAt[winners[i]];
+                    delete winnersCalledAt[winners[i]];
+                }
+                winners.splice(i, 1);
+            }
+        }
+        var waitedSeconds = Math.round((now - calledAt) / 1000);
+        $.inidb.set('ticketAbsenteeList',
+            username,
+            JSON.stringify({ winningTickets: winningTickets, waitedSeconds: waitedSeconds, type: 'pass' }));
         $.inidb.del('ticketWinnersList', username);
         $.inidb.decr('traffleSessionWinners', username, 1);
     }
 
     /**
      * @function calculateBonus
-     * @param {object} event 
-     * @returns {{multiplier: number, maxPoints: number, maxEntries: number}}
+     * @param {$.CommandEvent} event 
+     * @returns {{multiplier: number, maxPoints: number, maxEntries: number, bonusType: "none"|"regular"|"subscriber"}}
      */
     function calculateBonus(event) {
-        var multiplier;
+        var multiplier, bonusType;
         var args = event.getArgs();
 
-        if (args[0].equalsIgnoreCase('forceenter')) {
+        if (args[0] && args[0].equalsIgnoreCase('forceenter')) {
             // can't use tags. sender is the moderator, args[1] is the user being entered.
             var puppet = $.user.sanitize(args[1]);
             if ($.isSub(puppet)) {
                 multiplier = subTMulti;
+                bonusType = 'subscriber';
             } else if ($.isReg(puppet)) {
                 multiplier = regTMulti;
+                bonusType = 'regular';
             } else {
                 multiplier = 1;
+                bonusType = 'none';
             }
         } else {
             if (event.getTags().containsKey('subscriber') && event.getTags().get('subscriber').equals('1')) {
                 multiplier = subTMulti;
+                bonusType = 'subscriber';
             } else if ($.isReg(event.getSender())) {
                 multiplier = regTMulti;
+                bonusType = 'regular';
             } else {
                 multiplier = 1;
+                bonusType = 'none';
             }
         }
 
         return {
             multiplier: multiplier,
-            maxPoints: maxEntries,
-            maxEntries: Math.floor(maxEntries * multiplier)
+            maxPoints: maxEntries * cost,
+            maxEntries: Math.floor(maxEntries * multiplier),
+            bonusType: bonusType
         };
     }
 
@@ -293,7 +346,7 @@
 
         if (times > bonus.maxPoints || times == 0 || times < 0) {
             if (msgToggle) {
-                $.say($.whisperPrefix(user) + $.lang.get('ticketrafflesystem.only.buy.amount', bonus.maxEntries));
+                $.say($.whisperPrefix(user) + getTicketsUsageMessage(user, event));
             }
             return;
         }
@@ -304,7 +357,7 @@
                 prevEntries++;
                 if ((prevEntries + newEntries) > bonus.maxEntries) {
                     if (msgToggle) {
-                        $.say($.whisperPrefix(user) + $.lang.get('ticketrafflesystem.limit.hit', bonus.maxEntries));
+                        $.say($.whisperPrefix(user) + getTicketsUsageMessage(user, event));
                     }
                     return;
                 }
@@ -314,7 +367,7 @@
         if (cost > 0) {
             if ((times * cost) > $.getUserPoints(user)) {
                 if (msgToggle) {
-                    $.say($.whisperPrefix(user) + $.lang.get('ticketrafflesystem.err.points', $.pointNameMultiple));
+                    $.say($.whisperPrefix(user) + getTicketsUsageMessage(user, event));
                 }
                 return;
             }
@@ -325,7 +378,7 @@
         }
         totalTickets += newEntries;
         $.inidb.decr('points', user.toLowerCase(), (times * cost));
-        incr(user.toLowerCase(), newEntries, times * cost);
+        incr(user.toLowerCase(), newEntries, times * cost, bonus.bonusType);
 
         for (var i = 0; i < newEntries; i++) {
             entries.push(user);
@@ -372,6 +425,7 @@
 
         var cost = getTicketCost(user);
         $.inidb.del('ticketCostList', user.toLowerCase());
+        $.inidb.del('ticketBonusType', user.toLowerCase());
         $.inidb.incr('points', user.toLowerCase(), cost);
 
         if (msgToggle) {
@@ -384,14 +438,22 @@
      * @param {string} user 
      * @param {number} times 
      * @param {number} cost
+     * @param {"none"|"regular"|"subscriber"} bonusType
      */
-    function incr(user, times, cost) {
+    function incr(user, times, cost, bonusType) {
         if (!$.inidb.exists('entered', user.toLowerCase())) {
             $.inidb.set('entered', user.toLowerCase(), 'true');
             $.inidb.incr('raffleresults', 'ticketRaffleEntries', 1);
         }
         $.inidb.incr('ticketsList', user.toLowerCase(), times);
         $.inidb.incr('ticketCostList', user.toLowerCase(), cost);
+        var oldBonusType = $.getIniDbString('ticketBonusType', user.toLowerCase(), 'none');
+        var newBonusType = bonusType;
+        if (oldBonusType === 'subscriber' ||
+            (oldBonusType === 'regular' && bonusType !== 'subscriber')) {
+            newBonusType = oldBonusType;
+        }
+        $.inidb.set('ticketBonusType', user.toLowerCase(), newBonusType);
     }
 
     /**
@@ -403,7 +465,7 @@
         if (!$.inidb.exists('ticketsList', user.toLowerCase())) {
             return 0;
         }
-        return $.inidb.get('ticketsList', user.toLowerCase());
+        return $.getIniDbNumber('ticketsList', user.toLowerCase());
     };
 
     /**
@@ -415,7 +477,16 @@
         if (!$.inidb.exists('ticketCostList', user.toLowerCase())) {
             return 0;
         }
-        return $.inidb.get('ticketCostList', user.toLowerCase());
+        return $.getIniDbNumber('ticketCostList', user.toLowerCase());
+    }
+
+    /**
+     * @function getTicketBonusType
+     * @param {string} user 
+     * @returns {"none"|"regular"|"subscriber"}
+     */
+    function getTicketBonusType(user) {
+        return $.getIniDbString('ticketBonusType', user.toLowerCase(), 'none');
     }
 
     /**
@@ -521,6 +592,19 @@
             }
 
             /**
+             * @commandpath traffle pass - Marks a winner as passed (like absent, but less shameful).
+             */
+            if (action.equalsIgnoreCase('pass')) {
+                if (!args[1]) {
+                    $.say($.whisperPrefix(sender) + $.lang.get('ticketrafflesystem.pass.usage'));
+                    return;
+                }
+                pass(args[1]);
+                updateTxtFiles();
+                return;
+            }
+
+            /**
              * @commandpath traffle reset - Resets the raffle.
              */
             if (action.equalsIgnoreCase('reset')) {
@@ -535,12 +619,14 @@
                 clear();
                 $.inidb.RemoveFile('ticketsList');
                 $.inidb.RemoveFile('ticketCostList');
+                $.inidb.RemoveFile('ticketBonusType');
                 $.inidb.RemoveFile('ticketWinnersList');
                 $.inidb.RemoveFile('ticketAbsenteeList');
                 $.inidb.RemoveFile('entered');
                 $.inidb.set('raffleresults', 'ticketRaffleEntries', 0);
                 entries = [];
                 winners = [];
+                winnersCalledAt = {};
                 absentees = [];
                 if (sender != $.botName.toLowerCase()) {
                     $.say($.whisperPrefix(sender) + $.lang.get(refund ? 'ticketrafflesystem.reset.refund' : 'ticketrafflesystem.reset'));
@@ -632,7 +718,7 @@
         if (command.equalsIgnoreCase('tickets') || command.equalsIgnoreCase('ticket')) {
             if (!action) {
                 if (msgToggle && raffleStatus) {
-                    $.say($.whisperPrefix(sender) + $.lang.get('ticketrafflesystem.ticket.usage', getTickets(sender)));
+                    $.say($.whisperPrefix(sender) + getTicketsUsageMessage(sender, event));
                 }
                 return;
             }
@@ -646,6 +732,50 @@
             return;
         }
     });
+
+    /**
+     * @function getTicketsUsageMessage
+     * @param {string} sender 
+     * @param {$.CommandEvent} event 
+     * @returns {string}
+     */
+    function getTicketsUsageMessage(sender, event) {
+        var parts = [];
+        var numTickets = getTickets(sender);
+        if (numTickets > 0) {
+            parts.push($.lang.get('ticketrafflesystem.ticket.usage.entries', numTickets, formatPercentage(numTickets / entries.length)));
+        } else {
+            parts.push($.lang.get('ticketrafflesystem.ticket.usage.entries.none'));
+        }
+
+        var bonus = calculateBonus(event);
+        if (numTickets < bonus.maxEntries) {
+            var ticketsToMax = bonus.maxEntries - numTickets;
+            var preBonusTicketsToMax = ticketsToMax / bonus.multiplier;
+            var costToMax = preBonusTicketsToMax * cost;
+            if (preBonusTicketsToMax < 1) {
+                // they missed some bonus due to rounding, need to leave and rejoin
+                parts.push($.lang.get('ticketrafflesystem.ticket.usage.rebuy.rejoin', Math.floor(bonus.maxPoints / cost)));
+            } else {
+                var affordablePreBonusTicketsToMax = Math.min(preBonusTicketsToMax, Math.floor($.getUserPoints(sender) / cost));
+                if (affordablePreBonusTicketsToMax > 0) {
+                    var affordableTicketsToMax = Math.floor(affordablePreBonusTicketsToMax * bonus.multiplier);
+                    parts.push($.lang.get('ticketrafflesystem.ticket.usage.rebuy', affordableTicketsToMax, Math.floor(affordablePreBonusTicketsToMax)));
+                }
+            }
+            if (costToMax > $.getUserPoints(sender)) {  //XXX need a floor here?
+                parts.push($.lang.get('ticketrafflesystem.ticket.usage.rebuy.nofunds', ticketsToMax, $.pointNameMultiple));
+            }
+        } else {
+            parts.push($.lang.get('ticketrafflesystem.ticket.usage.rebuy.capped'));
+        }
+
+        if (numTickets > 0) {
+            parts.push($.lang.get('ticketrafflesystem.ticket.usage.leave', $.getPointsString(getTicketCost(sender))));
+        }
+
+        return parts.join(' ');
+    }
 
     /**
      * @function resumeRaffle
@@ -703,6 +833,8 @@
             $.writeToFile(data, filename, false);
         }
 
+        $.writeToFile(buildSidebarJson(), directory + 'sidebar.json', false);
+
         return true;
     }
 
@@ -747,7 +879,6 @@
             '(subbonus)': subTMulti ? formatPercentage(subTMulti - 1) : null,
         };
 
-        // TODO: write sidebar as HTML instead of plain text
         expandLines(raffleStatus ? 'open' : 'closed');
 
         if (winners.length) {
@@ -812,8 +943,126 @@
         }
     }
 
-    function formatPercentage(pct) {
-        return (pct * 100.0).toFixed(0) + '%';
+    function buildSidebarJson() {
+        var epicEnabled = $.bot.isModuleEnabled('./custom/epicLink.js');
+        var ratingEnabled = $.bot.isModuleEnabled('./custom/epicLink.js') && $.fortnitedb.isEnabled();
+
+        var obj = {
+            'config': {
+                'open': raffleStatus,
+                'title': 'Clown Car Raffle',
+                'prize': 'A seat in this party',
+                'finePrint': 'You must be present to win.',
+                'waitedEnabled': true,
+                'commands': {
+                    'tickets': '!tickets',
+                    'leave': '!leave',
+                    'moreInfo': '!clowncar',
+                },
+                'points': {
+                    'min': 1,
+                    'max': maxEntries,
+                    'regularBonus': regTMulti ? formatPercentage(regTMulti - 1) : undefined,
+                    'subscriberBonus': subTMulti ? formatPercentage(subTMulti - 1) : undefined,
+                },
+                'inGame': {
+                    'enabled': epicEnabled,
+                    'handle': {
+                        'name': 'Epic',
+                        'missing': 'Use !setepic',
+                    },
+                    'rating': {
+                        'enabled': ratingEnabled,
+                        'name': '\u26a1',
+                        'missing': 'Epic?',
+                    },
+                },
+            },
+            'winners': [],
+            'entered': [],
+            'notPresent': [],
+            'passed': [],
+        };
+
+        function makeRow(username) {
+            var result = {'name': $.username.resolve(username) + ''};
+            var epic = epicEnabled && $.epicLink.getEpicName(username);
+            if (epic) {
+                result['inGame'] = { 'handle': epic + '' };
+                if (ratingEnabled) {
+                    result['inGame']['rating'] = $.fortnitedb.getPowerLevel(epic);
+                }
+            }
+            return result;
+        }
+
+        if (winners && winners.length) {
+            for (var i in winners) {
+                var row = makeRow(winners[i]);
+                obj['winners'].push(row);
+            }
+        }
+
+        if (entries && entries.length) {
+            var keys = $.inidb.GetKeyList('ticketsList', '');
+            for (var i in keys) {
+                var row = makeRow(keys[i]);
+                row['tickets'] = getTickets(keys[i]);
+                row['bonusType'] = getTicketBonusType(keys[i]);
+                if (!row['tickets']) {
+                    $.log.warn('Skipping sidebar row for ' + keys[i] + ' with 0 tickets');
+                    continue;
+                }
+                obj['entered'].push(row);
+            }
+        }
+
+        if (absentees && absentees.length) {
+            for (var i in absentees) {
+                var data = JSON.parse($.getIniDbString('ticketAbsenteeList', absentees[i], '{}'));
+                var row = {
+                    'name': $.username.resolve(absentees[i]) + '',
+                    'tickets': data.winningTickets,
+                    'waitedSeconds': data.waitedSeconds
+                };
+                if (!row['tickets']) {
+                    $.log.warn('Skipping sidebar row for ' + keys[i] + ' with 0 tickets');
+                    continue;
+                }
+                if (data.type === 'absent') {
+                    obj['notPresent'].push(row);
+                } else if (data.type === 'pass') {
+                    obj['passed'].push(row);
+                } else {
+                    $.log.warn('Bad absentee type (' + data.type + ') for ' + absentees[i]);
+                }
+            }
+        }
+
+        return JSON.stringify(obj);
+    }
+
+    /**
+     * @function formatPercentage
+     * @param {number} fraction 
+     * @returns {string}
+     */
+    function formatPercentage(fraction) {
+        var pct = fraction * 100.0;
+        var str;
+        if (pct >= 100) {
+            str = pct.toFixed(0);
+        } else if (pct >= 10) {
+            str = pct.toFixed(1);
+        } else if (pct >= 1) {
+            str = pct.toFixed(2);
+        } else {
+            str = pct.toFixed(3);
+        }
+        if (str.indexOf('.') >= 0) {
+            str = str.replace(/\.?0+$/, '');
+        }
+        return str + '%';
     }
 
     /**
@@ -838,6 +1087,7 @@
             $.inidb.set('raffleresults', 'ticketRaffleEntries', 0);
             $.inidb.RemoveFile('ticketsList');
             $.inidb.RemoveFile('ticketCostList');
+            $.inidb.RemoveFile('ticketBonusType');
             $.inidb.RemoveFile('ticketWinnersList');
             $.inidb.RemoveFile('entered');
         }

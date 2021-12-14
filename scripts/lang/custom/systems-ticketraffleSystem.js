@@ -23,19 +23,24 @@ $.lang.register('ticketrafflesystem.err.raffle.not.opened', 'There is no ticket 
 $.lang.register('ticketrafflesystem.raffle.closed', 'The ticket raffle is now closed. Use "!traffle draw" to draw a winner.');
 $.lang.register('ticketrafflesystem.raffle.close.err', 'The ticket raffle ended. No one entered.');
 $.lang.register('ticketrafflesystem.winner', 'The winner of this ticket raffle is: $1! $2 $3');
-$.lang.register('ticketrafflesystem.only.buy.amount', 'You can only buy $1 ticket(s)');
-$.lang.register('ticketrafflesystem.limit.hit', 'You\'re only allowed to buy $1 ticket(s)');
+// $.lang.register('ticketrafflesystem.only.buy.amount', 'You can only buy $1 ticket(s)');
+// $.lang.register('ticketrafflesystem.limit.hit', 'You\'re only allowed to buy $1 ticket(s)');
 $.lang.register('ticketrafflesystem.err.not.following', 'You need to be following to enter.');
 $.lang.register('ticketrafflesystem.err.points', 'You don\'t have enough $1 to enter.');
 $.lang.register('ticketrafflesystem.entered', '$1 entries added to the ticket raffle! ($2 tickets in total)');
 $.lang.register('ticketrafflesystem.usage', 'Usage: !traffle open [max entries] [regulars ticket multiplier (default = 1)] [subscribers ticket multiplier (default = 1)] [cost] [-followers]');
 $.lang.register('ticketrafflesystem.msg.enabled', 'Ticket raffle messages have been enabled.');
 $.lang.register('ticketrafflesystem.msg.disabled', 'Ticket raffle messages have been disabled.');
-$.lang.register('ticketrafflesystem.ticket.usage', 'Usage: !tickets (amount), or !tickets leave - And you currently have $1 tickets.');
-//TODO
-// $.lang.register('ticketrafflesystem.ticket.usage', 'You have $1 ticket(s) entered in this raffle, giving you a $2 chance to win. $3$4 ');
-// $.lang.register('ticketrafflesystem.ticket.usage.rebuy.max', 'You can get the maximum of $1 tickets by typing !tickets $2.');
-// $.lang.register('ticketrafflesystem.ticket.usage.rebuy.partial', 'With your $1, you can afford to get a total of $2 tickets) by typing !tickets $2.');
+
+// $.lang.register('ticketrafflesystem.ticket.usage', 'Usage: !tickets (amount), or !tickets leave - And you currently have $1 tickets.');
+$.lang.register('ticketrafflesystem.ticket.usage.entries.none', 'You have not bought any tickets in this raffle.');
+$.lang.register('ticketrafflesystem.ticket.usage.entries', 'You\'ve bought $1 ticket(s) in this raffle, giving you a $2 chance to win.');
+$.lang.register('ticketrafflesystem.ticket.usage.rebuy', 'You can buy $1 more ticket(s) by typing !tickets $2.');
+$.lang.register('ticketrafflesystem.ticket.usage.rebuy.capped', 'That\'s the maximum number of tickets (including any applicable bonus).');
+$.lang.register('ticketrafflesystem.ticket.usage.rebuy.nofunds', 'You could buy up to $1 more ticket(s) if you had more $2.');
+$.lang.register('ticketrafflesystem.ticket.usage.rebuy.rejoin', 'To get your full bonus, exit the raffle (!tickets leave), then re-buy all at once (!tickets $1).');
+$.lang.register('ticketrafflesystem.ticket.usage.leave', 'To exit the raffle and refund $1, type !tickets leave.')
+
 $.lang.register('ticketrafflesystem.auto.msginterval.set', 'Message interval set to $1 minutes.');
 $.lang.register('ticketrafflesystem.auto.msg.set', 'Message set to $1.');
 $.lang.register('ticketrafflesystem.auto.msg.usage', 'Usage: !traffle autoannouncemessage [amount in minutes]');
@@ -56,6 +61,10 @@ $.lang.register('ticketrafflesystem.winner.noepic', '[Epic not set]');
 $.lang.register('ticketrafflesystem.absent.usage', 'Usage: !traffle absent [winner].');
 $.lang.register('ticketrafflesystem.absent.err', 'Failed to mark $1 absent because they have no winning tickets.');
 $.lang.register('ticketrafflesystem.absent', 'Removing $1 as winner for being absent. You must be present to win!');
+
+$.lang.register('ticketrafflesystem.pass.usage', 'Usage: !traffle pass [winner].');
+$.lang.register('ticketrafflesystem.pass.err', 'Failed to mark $1 passed because they have no winning tickets.');
+$.lang.register('ticketrafflesystem.pass', 'Removing $1 as winner.');
 
 $.lang.register('ticketrafflesystem.sessionwins.1', 'This is $1\'s first win this stream. Congratulations!');
 $.lang.register('ticketrafflesystem.sessionwins.2', '$1 has won twice this stream.');
@@ -82,5 +91,5 @@ $.lang.register('ticketrafflesystem.file.sidebar.winners.each.1', '  (username) 
 $.lang.register('ticketrafflesystem.file.sidebar.entries.1', '\n*** Players Entered ***');
 $.lang.register('ticketrafflesystem.file.sidebar.entries.each.1', '(username) ((tickets))');
 
-$.lang.register('ticketrafflesystem.file.sidebar.absentees.1', '\n*** Not Present When Called ***');
+$.lang.register('ticketrafflesystem.file.sidebar.absentees.1', '\n*** Not Present ***');
 $.lang.register('ticketrafflesystem.file.sidebar.absentees.each.1', '(username)');

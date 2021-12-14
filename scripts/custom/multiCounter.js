@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2019 phantombot.tv
+ * Copyright (C) 2016-2021 phantombot.github.io/PhantomBot
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,15 +22,31 @@
  */
 
 // TODO: register counter names as aliases
+// TODO: track all-time records (longest win/loss streak)
+// TODO: game-specific counters
+// TODO: !editctr
+// TODO: !permctr
 
 (function () {
 
     var VALUES_TABLE = 'multiCounterValues',
         TITLES_TABLE = 'multiCounterTitles',
         LINKS_TABLE = 'multiCounterLinks',
+        SESSION_START_TABLE = 'multiCounterSessionStart',
+        OPTIONS_TABLE = 'multiCounterOptions',
         COUNTERS_DIR = './addons/multicounter';
 
     var reValidCounterName = /^[a-z][a-z0-9]*$/;
+
+    /**
+     * @typedef Options
+     * @type {Object}
+     * @property {boolean} [hidden] Don't show the counter in the overlay or external files.
+     * @property {boolean} [muted] Don't mention counter updates in the stream chat.
+     * @property {boolean} [unlisted] Don't show the counter in !listctr.
+     */
+
+    var AVAILABLE_OPTIONS = ['hidden', 'muted', 'unlisted'];
 
     /**
      * @typedef Counter
@@ -39,6 +55,7 @@
      * @property {Object} [link]
      * @property {'ratio'|'streak'|'min'|'max'|'sum'} link.type
      * @property {string[]} link.others
+     * @property {Options} options
      */
 
     /**
@@ -75,7 +92,7 @@
      * @function updateDependentCounters
      * @param {string} name The counter that was explicitly modified to set off the chain of dependencies.
      * @param {number} oldValue The value of the counter before it was modified.
-     * @returns {string[]} The names of all counters affected by the change.
+     * @returns {string[]} The names of the counters affected by the change (excluding any muted ones).
      */
     function updateDependentCounters(name, oldValue) {
         name = name.toLowerCase();
@@ -128,7 +145,9 @@
             newValues[linkName] = linkValue;
             setLastLinkValue(linkName, linkValue);
 
-            result.push(linkName);
+            if (!ctr.options.muted) {
+                result.push(linkName);
+            }
         }
 
         return result;
@@ -188,7 +207,7 @@
     function updateExternalCounterViews(name) {
         var ctr = cacheConfig(name);
 
-        if (!ctr) {
+        if (!ctr || ctr.options.hidden) {
             return;
         }
 
@@ -196,6 +215,7 @@
 
         updateCounterFile(name, ctr, value);
         updateMasterFile();
+        updateSessionFile();
         updateWebSocket(name, ctr, value);
     }
 
@@ -229,14 +249,44 @@
             lines = [];
         
         for (var i in keys) {
-            var value = getCounterValue(keys[i]),
+            var ctr = cacheConfig(keys[i]);
+            if (ctr.options.hidden) {
+                continue;
+            }
+            var value = ctr.link ? getLastLinkValue(keys[i]) : getCounterValue(keys[i]).toFixed(0),
                 title = $.getIniDbString(TITLES_TABLE, keys[i], keys[i]);
             obj[keys[i]] = { title: title, value: value };
-            lines.push($.lang.get('multicounter.format.file', title, value.toFixed(0)));
+            lines.push($.lang.get('multicounter.format.file', title, value));
         }
 
         $.writeToFile(lines.join('\n'), masterTxtFile, false);
         $.writeToFile(JSON.stringify(obj), masterJsonFile, false);
+    }
+
+    function updateSessionFile() {
+        var sessionTxtFile = COUNTERS_DIR + '/SESSION.txt',
+            sessionJsonFile = COUNTERS_DIR + '/SESSION.json';
+        
+        var keys = $.inidb.GetKeyList(TITLES_TABLE, ''),
+            obj = {},
+            lines = [];
+        
+        for (var i in keys) {
+            var ctr = cacheConfig(keys[i]);
+            if (ctr.options.hidden) {
+                continue;
+            }
+            var newValue = ctr.link ? getLastLinkValue(keys[i]) : getCounterValue(keys[i]).toFixed(0),
+                title = $.getIniDbString(TITLES_TABLE, keys[i], keys[i]),
+                oldValue = $.getIniDbString(SESSION_START_TABLE, keys[i]);
+            if (oldValue !== undefined && oldValue !== newValue) {
+                obj[keys[i]] = { title: title, oldValue: oldValue, newValue: newValue };
+                lines.push($.lang.get('multicounter.format.session.file', title, oldValue, newValue));
+            }
+        }
+
+        $.writeToFile(lines.join('\n'), sessionTxtFile, false);
+        $.writeToFile(JSON.stringify(obj), sessionJsonFile, false);
     }
 
     function updateWebSocket(name, ctr, value) {
@@ -257,7 +307,6 @@
     }
 
     function sayUpdatedCounterValues(sender, names) {
-        // TODO: muting
         for (var i in names) {
             sayCounterValue(sender, names[i]);
         }
@@ -318,7 +367,7 @@
     /**
      * @function cacheConfig
      * @param {string} name 
-     * @returns {Counter}
+     * @returns {Counter|null}
      */
     function cacheConfig(name) {
         name = name.toLowerCase();
@@ -328,7 +377,7 @@
     /**
      * @function loadCounterConfig
      * @param {string} name 
-     * @returns {Counter}
+     * @returns {Counter|null}
      */
     function loadCounterConfig(name) {
         var title = $.getIniDbString(TITLES_TABLE, name, null);
@@ -343,6 +392,16 @@
         if (link) {
             var parts = link.split(';');
             result.link = { type: parts[0], others: parts.slice(1).join(';').split(',') };
+        }
+
+        result.options = {};
+        var options = $.getIniDbString(OPTIONS_TABLE, name, null);
+        if (options) {
+            try {
+                result.options = JSON.parse(options);
+            } catch (e) {
+                $.log.warn('Discarding counter options due to parse error: ' + name);
+            }
         }
 
         return result;
@@ -569,10 +628,11 @@
                 return;
             }
 
-            counters[name] = { title: title };
+            counters[name] = { title: title, options: {} };
             
             $.inidb.set(VALUES_TABLE, name, 0);
             $.inidb.set(TITLES_TABLE, name, title);
+            $.inidb.set(OPTIONS_TABLE, name, '{}');
 
             $.say($.whisperPrefix(sender) + $.lang.get('multicounter.addctr.success', name, title)); 
             return;
@@ -597,6 +657,7 @@
             $.inidb.del(VALUES_TABLE, name);
             $.inidb.del(TITLES_TABLE, name);
             $.inidb.del(LINKS_TABLE, name);
+            $.inidb.del(OPTIONS_TABLE, name);
 
             $.panelsocketserver.sendJSONToAll(JSON.stringify(
                 {
@@ -612,10 +673,32 @@
         }
 
         /*
-         * @commandpath listctr - List all counters.
+         * @commandpath listctr [-all] - List all counters.
          */
         if (command.equalsIgnoreCase('listctr') || command.equalsIgnoreCase('listctrs')) {
+            /** @type {string[]} */
             var keys = $.inidb.GetKeyList(TITLES_TABLE, '');
+            var includeUnlisted = args[0] && args[0].equalsIgnoreCase('-all') && $.isMod(sender);
+            if (!includeUnlisted) {
+                keys = keys.filter(function (k) {
+                    var ctr = cacheConfig(k);
+                    return !ctr.options.unlisted;
+                });
+            }
+            keys = keys.map(function (k) {
+                var ctr = cacheConfig(k);
+                var opts = '';
+                if (ctr.options.hidden) {
+                    opts += 'h';
+                }
+                if (ctr.options.muted) {
+                    opts += 'm';
+                }
+                if (ctr.options.unlisted) {
+                    opts += 'u';
+                }
+                return opts ? k + ' (' + opts + ')' : k;
+            });
             if (keys.length) {
                 $.paginateArray(keys, 'multicounter.listctr.counters', ', ', true, sender);
             } else {
@@ -632,7 +715,20 @@
             var others = args[2];
             var title = args.slice(3).join(' ');
 
-            if (!name || !others || !title) {
+            if (name && !type && !others && !title) {
+                // show existing link definition
+                var ctr = cacheConfig(name);
+                if (!ctr) {
+                    $.say($.whisperPrefix(sender) + $.lang.get('multicounter.error.404'));
+                } else if (!ctr.link) {
+                    $.say($.whisperPrefix(sender) + $.lang.get('multicounter.addctr.error.exists'));
+                } else {
+                    $.say($.whisperPrefix(sender) + $.lang.get('multicounter.linkctr.existing', name, ctr.link.type, ctr.link.others.join()));
+                }
+                return;
+            }
+
+            if (!name || !type || !others || !title) {
                 $.say($.whisperPrefix(sender) + $.lang.get('multicounter.linkctr.usage'));
                 return;
             }
@@ -649,7 +745,8 @@
 
             var ctr = {
                 title: title,
-                link: { type: type, others: others.split(',') }
+                link: { type: type, others: others.split(',') },
+                options: {}
             };
 
             for (var i in ctr.link.others) {
@@ -669,6 +766,72 @@
             setLastLinkValue(name, value);
 
             $.say($.lang.get('multicounter.format.chat', title, value, $.whisperPrefix(sender), name));
+            return;
+        }
+
+        /*
+         * @commandpath optctr [name] [+option -option ...] - Display or change a counter's options.
+         */
+        if (command.equalsIgnoreCase('optctr')) {
+            if (!name) {
+                $.say($.whisperPrefix(sender) + $.lang.get('multicounter.optctr.usage'));
+                return;
+            }
+
+            var ctr = cacheConfig(name);
+            if (!ctr) {
+                $.say($.whisperPrefix(sender) + $.lang.get('multicounter.error.404'));
+                return;
+            }
+
+            var wasHidden = !!ctr.options.hidden;
+
+            /**
+             * @type {Array<{key: string, value: boolean}>}
+             */
+            var changes = [];
+
+            for (var i = 1; i < args.length; i++) {
+                var opt = args[i] + '';
+                var optPrefix = opt.substring(0, 1);
+                var optName = opt.substring(1);
+                if ((optPrefix !== '+' && optPrefix !== '-') || AVAILABLE_OPTIONS.indexOf(optName) < 0) {
+                    $.say($.whisperPrefix(sender) + $.lang.get('multicounter.optctr.usage'));
+                    return;
+                }
+                changes.push({key: optName, value: optPrefix === '+'});
+            }
+
+            // update in-memory config
+            for (var i in changes) {
+                ctr.options[changes[i].key] = changes[i].value;
+            }
+
+            // update persistent config
+            $.setIniDbString(OPTIONS_TABLE, name, JSON.stringify(ctr.options));
+
+            // add/remove from overlay
+            var isHidden = !!ctr.options.hidden;
+            if (isHidden && !wasHidden) {
+                $.panelsocketserver.sendJSONToAll(JSON.stringify(
+                    {
+                        'counter_update': true,
+                        'data': JSON.stringify([
+                            { '$delete': String(name) }
+                        ])
+                    }
+                ));
+            } else if (wasHidden && !isHidden) {
+                var value = ctr.link ? getLastLinkValue(name) : getCounterValue(name);
+                updateWebSocket(name, ctr, value);
+            }
+
+            // report
+            var summary = AVAILABLE_OPTIONS.map(function (k) {
+                return (ctr.options[k] ? '+' : '-') + k;
+            }).join(' ');
+
+            $.say($.whisperPrefix(sender) + $.lang.get('multicounter.optctr.success', name, summary));
             return;
         }
 
@@ -694,7 +857,7 @@
             }
 
             /*
-             * @commandpath ctr [name] reset [newValue] [-silent] - Reset a counter to the given number, or zero.
+             * @commandpath ctr [name] reset [newValue] - Reset a counter to the given number, or zero.
              */
             if (action.equalsIgnoreCase('reset')) {
                 if (cacheConfig(name).link) {
@@ -711,7 +874,7 @@
             }
 
             /*
-             * @commandpath ctr [name] incr [amount] [-silent] - Add one or another amount to the named counter.
+             * @commandpath ctr [name] incr [amount] - Add one or another amount to the named counter.
              */
             if (action.equalsIgnoreCase('add') || action.equalsIgnoreCase('incr') || action.equalsIgnoreCase('+')) {
                 if (cacheConfig(name).link) {
@@ -728,7 +891,7 @@
             }
 
             /*
-             * @commandpath ctr [name] decr [amount] [-silent] - Subtract one or another amount from the named counter.
+             * @commandpath ctr [name] decr [amount] - Subtract one or another amount from the named counter.
              */
             if (action.equalsIgnoreCase('sub') || action.equalsIgnoreCase('decr') || action.equalsIgnoreCase('-')) {
                 if (cacheConfig(name).link) {
@@ -769,9 +932,30 @@
 
     getSubCommandFromArguments.isMultiCounterHook = true;
 
-    /*
-    * @event initReady
-    */
+    /**
+     * @function resetSession
+     */
+    function resetSession() {
+        $.inidb.RemoveFile(SESSION_START_TABLE);
+        var keys = $.inidb.GetKeyList(VALUES_TABLE, '');
+        for (var i in keys) {
+            var name = keys[i];
+            var ctr = cacheConfig(name);
+            var value = ctr.link ? getLastLinkValue(name) : getCounterValue(name).toFixed(0);
+            $.setIniDbString(SESSION_START_TABLE, name, value);
+        }
+    }
+
+    /**
+     * @event twitchOnline
+     */
+    $.bind('twitchOnline', function () {
+        resetSession();
+    });
+
+    /**
+     * @event initReady
+     */
     $.bind('initReady', function () {
         // hook getSubCommandFromArguments
         if (!$.getSubCommandFromArguments.isMultiCounterHook) {
@@ -785,8 +969,7 @@
         $.registerChatCommand('./custom/multiCounter.js', 'listctr', 7);
         $.registerChatCommand('./custom/multiCounter.js', 'listctrs', 7);
         $.registerChatCommand('./custom/multiCounter.js', 'linkctr', 1);
-        // $.registerChatCommand('./custom/multiCounters.js', 'editctr', 1);    // TODO
-        // $.registerChatCommand('./custom/multiCounters.js', 'permctr', 1);    // TODO
+        $.registerChatCommand('./custom/multiCounter.js', 'optctr', 1);
 
         $.registerChatSubcommand('ctr', 'reset', 2);
         $.registerChatSubcommand('ctr', 'add', 2);
@@ -795,6 +978,10 @@
         $.registerChatSubcommand('ctr', 'sub', 2);
         $.registerChatSubcommand('ctr', 'decr', 2);
         $.registerChatSubcommand('ctr', '-', 2);
+
+        if (!$.isOnline($.channelName)) {
+            resetSession();
+        }
     });
 
     /*
